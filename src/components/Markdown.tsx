@@ -95,17 +95,9 @@ export function Markdown({ children }: { children: string }) {
           h3: ({ children }) => (
             <h3 className="mb-2 mt-4 text-base font-semibold tracking-tight">{children}</h3>
           ),
-          p: ({ children, node }) => {
-            // Check if paragraph contains block-level elements (code blocks)
-            const hasBlockChild = node?.children?.some(
-              (child: any) => child.type === 'element' && child.tagName === 'code' && !child.properties?.inline
-            );
-            // If it has block children, render as div instead of p
-            if (hasBlockChild) {
-              return <div className="my-3">{children}</div>;
-            }
-            return <p className="my-3 leading-7 text-foreground/90">{children}</p>;
-          },
+          p: ({ children }) => (
+            <p className="my-3 leading-7 text-foreground/90">{children}</p>
+          ),
           ul: ({ children }) => (
             <ul className="my-3 list-disc space-y-1 pl-5 text-foreground/90">{children}</ul>
           ),

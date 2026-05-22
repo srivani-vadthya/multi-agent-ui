@@ -1,12 +1,11 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { Plus, Sparkles, Trash2, Settings, User, LogOut, Zap } from "lucide-react";
+import { Plus, Sparkles, Trash2, Settings, User } from "lucide-react";
 import { AGENT_LIST, AGENTS, type AgentId } from "@/lib/agents";
 import { useChatStore } from "@/lib/store";
 import { AgentBadge } from "./AgentBadge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
 
 export function AppSidebar({ activeAgent }: { activeAgent: AgentId }) {
   const navigate = useNavigate();
@@ -15,9 +14,6 @@ export function AppSidebar({ activeAgent }: { activeAgent: AgentId }) {
   const threads = useChatStore((s) => s.threads);
   const createThread = useChatStore((s) => s.createThread);
   const deleteThread = useChatStore((s) => s.deleteThread);
-  const user = useChatStore((s) => s.user);
-  const logout = useChatStore((s) => s.logout);
-  const [showLogout, setShowLogout] = useState(false);
 
   const newThread = (agentId: AgentId) => {
     const t = createThread(agentId);
@@ -27,18 +23,12 @@ export function AppSidebar({ activeAgent }: { activeAgent: AgentId }) {
     });
   };
 
-  const handleLogout = () => {
-    logout();
-    setShowLogout(false);
-    navigate({ to: "/" });
-  };
-
   return (
     <aside className="flex h-screen w-72 shrink-0 flex-col border-r border-white/5 bg-sidebar/80 backdrop-blur-xl">
       {/* Brand */}
       <Link to="/" className="flex items-center gap-3 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-grey p-2.9">
-          <img src="/logo.png" alt="Nexus AI Logo" className="h-full w-full object-contain" />
+        <div className="grid h-9 w-9 place-items-center rounded-xl bg-aurora glow-primary">
+          <Sparkles className="h-4 w-4 text-background" />
         </div>
         <div className="leading-tight">
           <div className="text-sm font-semibold tracking-tight">Nexus AI</div>
@@ -157,53 +147,20 @@ export function AppSidebar({ activeAgent }: { activeAgent: AgentId }) {
 
       {/* Profile */}
       <div className="border-t border-white/5 p-3">
-        {user ? (
-          <div className="relative">
-            <div className="flex items-center gap-3 rounded-xl px-2 py-2">
-              <div className="grid h-8 w-8 place-items-center rounded-full bg-aurora text-xs font-semibold text-background">
-                {user.name.charAt(0).toUpperCase()}
-              </div>
-              <div className="min-w-0 flex-1 leading-tight">
-                <div className="truncate text-sm">{user.name}</div>
-                <div className="truncate text-[11px] text-muted-foreground">
-                  {user.email}
-                </div>
-              </div>
-              <button
-                onClick={() => setShowLogout(!showLogout)}
-                className="rounded-md p-1.5 text-muted-foreground hover:bg-white/5 hover:text-foreground"
-                title="Settings"
-              >
-                <Settings className="h-4 w-4" />
-              </button>
-            </div>
-            {showLogout && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="absolute bottom-full left-3 right-3 mb-2 rounded-lg border border-white/10 bg-card p-1 shadow-lg"
-              >
-                <button
-                  onClick={handleLogout}
-                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground hover:bg-destructive/10 hover:text-destructive"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Logout
-                </button>
-              </motion.div>
-            )}
+        <div className="flex items-center gap-3 rounded-xl px-2 py-2">
+          <div className="grid h-8 w-8 place-items-center rounded-full bg-aurora text-xs font-semibold text-background">
+            AV
           </div>
-        ) : (
-          <Link
-            to="/"
-            className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-white/5"
-          >
-            <div className="grid h-8 w-8 place-items-center rounded-full bg-muted">
-              <User className="h-4 w-4" />
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="truncate text-sm">Alex Vance</div>
+            <div className="truncate text-[11px] text-muted-foreground">
+              Director, Platform
             </div>
-            <div className="text-sm">Login to continue</div>
-          </Link>
-        )}
+          </div>
+          <button className="rounded-md p-1.5 text-muted-foreground hover:bg-white/5 hover:text-foreground">
+            <Settings className="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </aside>
   );

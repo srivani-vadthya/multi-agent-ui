@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Copy, RefreshCw, Check, FileText, Download } from "lucide-react";
+import { Copy, RefreshCw, Check, FileText } from "lucide-react";
 import { useState } from "react";
 import type { Message } from "@/lib/store";
 import type { AgentDef } from "@/lib/agents";
@@ -22,16 +22,6 @@ export function MessageBubble({
     await navigator.clipboard.writeText(message.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  };
-
-  const download = () => {
-    const blob = new Blob([message.content], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${agent.id}-report-${new Date().toISOString().slice(0, 10)}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -76,14 +66,6 @@ export function MessageBubble({
                   {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                   {copied ? "Copied" : "Copy"}
                 </button>
-                {agent.id === "rca" && (
-                  <button
-                    onClick={download}
-                    className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors hover:bg-white/5 hover:text-foreground"
-                  >
-                    <Download className="h-3 w-3" /> Download
-                  </button>
-                )}
                 {onRegenerate && (
                   <button
                     onClick={onRegenerate}

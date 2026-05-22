@@ -1,8 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { Activity, FileText, X } from "lucide-react";
 import type { AgentDef } from "@/lib/agents";
-import { useChatStore, type Thread, type Message, type UploadedFile } from "@/lib/store";
-import { uploadKnowledgeDocuments } from "@/lib/agentClient";
+import type { Thread, Message } from "@/lib/store";
 import { KnowledgePanel } from "./panels/KnowledgePanel";
 import { RcaPanel } from "./panels/RcaPanel";
 import { CodegenPanel } from "./panels/CodegenPanel";
@@ -19,26 +18,11 @@ export function RightPanel({
   busy: boolean;
   onClose?: () => void;
 }) {
-  const addFiles = useChatStore((s) => s.addFiles);
   // Latest assistant message meta
   const lastAssistant = [...thread.messages]
     .reverse()
     .find((m) => m.role === "assistant" && m.content) as Message | undefined;
   const meta = (lastAssistant?.meta ?? {}) as Record<string, unknown>;
-
-  const uploadToPinecone = async (files: File[]) => {
-    const uploaded = await uploadKnowledgeDocuments(files, thread.id);
-    if (uploaded) {
-      const fileMetadata: UploadedFile[] = files.map((file) => ({
-        id: crypto.randomUUID(),
-        name: file.name,
-        size: file.size,
-        type: file.type,
-      }));
-      addFiles(thread.id, fileMetadata);
-    }
-    return uploaded;
-  };
 
   return (
     <aside className="flex h-screen w-[360px] shrink-0 flex-col border-l border-white/5 bg-card/40 backdrop-blur-xl">
@@ -79,7 +63,7 @@ export function RightPanel({
         </div>
 
         {/* Files */}
-        {agent.id !== "knowledge" && thread.files.length > 0 && (
+        {thread.files.length > 0 && (
           <div className="border-b border-white/5 px-5 py-4">
             <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
               Attached files
@@ -110,14 +94,7 @@ export function RightPanel({
             transition={{ duration: 0.25 }}
             className="px-5 py-4"
           >
-            {agent.id === "knowledge" && (
-              <KnowledgePanel
-                meta={meta}
-                agent={agent}
-                files={thread.files}
-                onUploadToPinecone={uploadToPinecone}
-              />
-            )}
+            {agent.id === "knowledge" && <KnowledgePanel meta={meta} agent={agent} />}
             {agent.id === "rca" && <RcaPanel meta={meta} agent={agent} />}
             {agent.id === "codegen" && <CodegenPanel meta={meta} agent={agent} />}
             {agent.id === "autofix" && <AutofixPanel meta={meta} agent={agent} />}

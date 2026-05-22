@@ -1,10 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { ArrowRight, Sparkles, Zap, Shield, Layers, LogIn, User } from "lucide-react";
+import { ArrowRight, Sparkles, Zap, Shield, Layers } from "lucide-react";
 import { AGENT_LIST, type AgentId } from "@/lib/agents";
 import { useChatStore } from "@/lib/store";
 import { AgentBadge } from "@/components/AgentBadge";
-import { useState } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -28,11 +27,6 @@ export const Route = createFileRoute("/")({
 function Landing() {
   const navigate = useNavigate();
   const createThread = useChatStore((s) => s.createThread);
-  const user = useChatStore((s) => s.user);
-  const setUser = useChatStore((s) => s.setUser);
-  const [showLogin, setShowLogin] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
 
   const launch = (agentId: AgentId) => {
     const t = createThread(agentId);
@@ -40,14 +34,6 @@ function Landing() {
       to: "/chat/$agentId/$threadId",
       params: { agentId, threadId: t.id },
     });
-  };
-
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (name && email) {
-      setUser({ name, email });
-      setShowLogin(false);
-    }
   };
 
   return (
@@ -72,27 +58,12 @@ function Landing() {
           </div>
           <div className="text-sm font-semibold tracking-tight">Nexus AI</div>
         </div>
-        <div className="flex items-center gap-3">
-          {user ? (
-            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5">
-              <User className="h-3.5 w-3.5 text-primary" />
-              <span className="text-xs font-medium">{user.name}</span>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowLogin(true)}
-              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-medium transition-colors hover:bg-white/[0.08]"
-            >
-              <LogIn className="h-3 w-3" /> Login
-            </button>
-          )}
-          <button
-            onClick={() => launch("knowledge")}
-            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-medium transition-colors hover:bg-white/[0.08]"
-          >
-            Open Workspace <ArrowRight className="h-3 w-3" />
-          </button>
-        </div>
+        <button
+          onClick={() => launch("knowledge")}
+          className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-medium transition-colors hover:bg-white/[0.08]"
+        >
+          Open Workspace <ArrowRight className="h-3 w-3" />
+        </button>
       </header>
 
       <main className="relative z-10 mx-auto max-w-6xl px-6 pt-12 pb-20">
@@ -198,59 +169,6 @@ function Landing() {
           ))}
         </div>
       </main>
-
-      {/* Login Modal */}
-      {showLogin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-md rounded-2xl border border-white/10 bg-card p-6"
-          >
-            <h2 className="text-xl font-semibold">Welcome to Nexus AI</h2>
-            <p className="mt-2 text-sm text-muted-foreground">Enter your details to continue</p>
-            <form onSubmit={handleLogin} className="mt-6 space-y-4">
-              <div>
-                <label className="text-sm font-medium">Name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="mt-1.5 w-full rounded-lg border border-border bg-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Enter your name"
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="mt-1.5 w-full rounded-lg border border-border bg-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Enter your email"
-                  required
-                />
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowLogin(false)}
-                  className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:opacity-90"
-                >
-                  Continue
-                </button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
     </div>
   );
 }

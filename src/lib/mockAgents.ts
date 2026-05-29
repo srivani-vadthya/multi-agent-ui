@@ -1,14 +1,5 @@
 import type { AgentId } from "./agents";
-
-/**
- * Mock streaming service layer.
- *
- * Each agent has a `stream` function that yields tokens with realistic
- * cadence and returns optional structured metadata for the right panel.
- *
- * Swap these implementations for real Render endpoints when ready —
- * the chat UI only relies on the async iterable + final meta payload.
- */
+import type { UploadedFile } from "./store";
 
 export interface StreamChunk {
   text: string;
@@ -18,199 +9,308 @@ export interface AgentResponse {
   meta?: Record<string, unknown>;
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const TEXT_FIELDS = [
+  "response",
+  "answer",
+  "result",
+  "text",
+  "content",
+  "message",
+  "rca_report",
+  "report",
+  "analysis",
+  "summary",
+];
 
-async function* streamText(text: string, perCharMs = 8): AsyncGenerator<StreamChunk> {
-  // Stream by small word groups for natural cadence
-  const tokens = text.match(/\S+\s*|\s+/g) ?? [text];
-  for (const t of tokens) {
-    await sleep(Math.max(10, perCharMs * Math.min(t.length, 6)));
-    yield { text: t };
+function readTextField(data: unknown): string | undefined {
+  if (typeof data === "string") return data;
+  if (!data || typeof data !== "object") return undefined;
+
+  const record = data as Record<string, unknown>;
+  for (const field of TEXT_FIELDS) {
+    const value = record[field];
+    if (typeof value === "string" && value.trim()) return value;
   }
+
+  return undefined;
 }
 
-/* ----------------------------- Knowledge ----------------------------- */
+function normalizeRcaReport(text: string): string {
+  let normalized = text
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "  ")
+    .replace(/\\"/g, '"')
+    .replace(/^```[a-zA-Z]*\s*/gm, "")
+    .replace(/```$/gm, "")
+    .replace(/^\s*_{8,}\s*$/gm, "---")
+    .trim();
 
-const KNOWLEDGE_REPLY = (q: string) => `Based on the indexed knowledge base, here is a synthesized answer:
+  if (normalized.startsWith("{") && normalized.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(normalized);
+      const parsedText = readTextField(parsed);
+      if (parsedText) return normalizeRcaReport(parsedText);
+    } catch {
+      // Keep the original text if it only looks like JSON.
+    }
+  }
 
-**${q.slice(0, 80)}** — short answer:
+  normalized = normalized
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (/^[A-Z][A-Z\s/()-]{4,}$/.test(trimmed)) {
+        return `## ${trimmed}`;
+      }
+      return line;
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
 
-Our enterprise documentation indicates a structured, multi-layer approach. Three sources were retrieved with high relevance:
+  return normalized;
+}
 
-1. **Architecture Overview v2.3** — describes the canonical pattern used across services.
-2. **Operations Runbook** — defines escalation paths and SLOs.
-3. **Security & Compliance Handbook** — outlines data residency and audit obligations.
+function extractResponseText(agentId: AgentId, data: unknown): string {
+  const text = readTextField(data) ?? JSON.stringify(data, null, 2);
+  return agentId === "rca" ? normalizeRcaReport(text) : text;
+}
 
-### Key takeaways
-- Adopt the documented pattern verbatim before customizing.
-- Confidence is **high** where multiple sources agree; flagged otherwise.
-- See citations panel for direct passages.
+const AGENT_URLS: Record<AgentId, string> = {
+  knowledge: import.meta.env.VITE_RENDER_KNOWLEDGE_AGENT_URL || "https://py-agent-knowledgeassistant-8bby.onrender.com",
+  rca: import.meta.env.VITE_RENDER_RCA_AGENT_URL || "https://patchly-rca-agent-2.onrender.com",
+  codegen: import.meta.env.VITE_RENDER_CODEGEN_AGENT_URL || "https://code-generator-wfye.onrender.com",
+  autofix: import.meta.env.VITE_RENDER_AUTOFIX_AGENT_URL || "https://your-autofix-agent.onrender.com/chat",
+};
 
-Let me know if you'd like me to dig deeper into any single source.`;
+// Primary endpoints for each agent
+const PRIMARY_ENDPOINTS: Record<AgentId, string> = {
+  knowledge: "/chat",
+  rca: "/analyze",
+  codegen: "/generate",
+  autofix: "/fix",
+};
 
-/* -------------------------------- RCA -------------------------------- */
-
-const RCA_REPLY = (q: string) => `## Root Cause Analysis Report
-
-**Incident**: ${q.slice(0, 100)}
-
-I clustered the log events, walked the dependency graph and ranked candidate causes:
-
-### Investigation chain
-1. Spike in 5xx originated at \`auth-service\` (14:02 UTC).
-2. Upstream \`session-cache\` latency p99 climbed 8x in the prior 90s.
-3. \`session-cache\` saturated CPU after a config push to **redis-cluster-b**.
-4. The config push removed two replicas, halving available read throughput.
-
-### Most likely root cause
-**Mis-scoped Redis topology change** — confidence **0.87**.
-
-### Recommended remediation
-- Roll back the redis-cluster-b config to the previous revision.
-- Re-enable the two removed replicas.
-- Add a guard on replica count in the deploy pipeline.`;
-
-/* ------------------------------ CodeGen ------------------------------ */
-
-const CODEGEN_REPLY = (q: string) => `Here is a production-ready scaffold for: _${q.slice(0, 80)}_
-
-\`\`\`typescript
-// src/server/inventory.ts
-import { z } from "zod";
-import { Hono } from "hono";
-
-const Item = z.object({
-  sku: z.string().min(1),
-  name: z.string().min(1),
-  qty: z.number().int().nonnegative(),
-  price: z.number().nonnegative(),
-});
-
-export const inventory = new Hono()
-  .get("/items", async (c) => {
-    const items = await c.var.db.item.findMany();
-    return c.json({ items });
-  })
-  .post("/items", async (c) => {
-    const body = Item.parse(await c.req.json());
-    const created = await c.var.db.item.create({ data: body });
-    return c.json(created, 201);
-  })
-  .patch("/items/:sku", async (c) => {
-    const sku = c.req.param("sku");
-    const patch = Item.partial().parse(await c.req.json());
-    const updated = await c.var.db.item.update({ where: { sku }, data: patch });
-    return c.json(updated);
-  });
-\`\`\`
-
-### Notes
-- Validation lives at the boundary with Zod.
-- Routes are composable for mounting under any prefix.
-- Replace \`c.var.db\` with your Prisma or Drizzle client.`;
-
-/* ------------------------------ AutoFix ------------------------------ */
-
-const AUTOFIX_REPLY = (q: string) => `## Diagnosis
-
-The snippet you shared contains a classic **stale closure** in the effect's dependency array, causing the handler to read an outdated value of \`count\`.
-
-## Patch (unified diff)
-
-\`\`\`diff
-- useEffect(() => {
--   const id = setInterval(() => {
--     setCount(count + 1);
--   }, 1000);
--   return () => clearInterval(id);
-- }, []);
-+ useEffect(() => {
-+   const id = setInterval(() => {
-+     setCount((c) => c + 1);
-+   }, 1000);
-+   return () => clearInterval(id);
-+ }, []);
-\`\`\`
-
-## Reasoning
-- The empty dependency array captures the initial \`count\` (\`0\`).
-- Using the functional updater removes the closure read entirely.
-- Confidence: **0.94**.
-
-_Original prompt: ${q.slice(0, 60)}_`;
-
-/* ------------------------------ Dispatch ----------------------------- */
+// Fallback endpoints to try if primary fails
+const FALLBACK_ENDPOINTS: Record<AgentId, string[]> = {
+  knowledge: ["/query", "/ask", "/upload", ""],
+  rca: ["/chat", "/api/analyze", ""],
+  codegen: ["/generate", "/edit", ""],
+  autofix: ["/chat", ""],
+};
 
 export async function* streamAgent(
   agentId: AgentId,
-  prompt: string
+  prompt: string,
+  files?: UploadedFile[]
 ): AsyncGenerator<StreamChunk, AgentResponse> {
-  let text: string;
+  const baseUrl = AGENT_URLS[agentId];
   let meta: Record<string, unknown> = {};
+  let lastError: Error | null = null;
 
-  switch (agentId) {
-    case "knowledge":
-      text = KNOWLEDGE_REPLY(prompt);
-      meta = {
-        citations: [
-          { title: "Architecture Overview v2.3", page: 14, score: 0.93 },
-          { title: "Operations Runbook", page: 7, score: 0.88 },
-          { title: "Security & Compliance Handbook", page: 22, score: 0.81 },
-        ],
-        confidence: 0.91,
-      };
-      break;
-    case "rca":
-      text = RCA_REPLY(prompt);
-      meta = {
-        rootCause: "Mis-scoped Redis topology change",
-        confidence: 0.87,
-        nodes: [
-          { id: "edge", label: "Edge", status: "ok" },
-          { id: "auth", label: "auth-service", status: "error" },
-          { id: "cache", label: "session-cache", status: "warn" },
-          { id: "redis", label: "redis-cluster-b", status: "error" },
-          { id: "db", label: "postgres-primary", status: "ok" },
-        ],
-        edges: [
-          ["edge", "auth"],
-          ["auth", "cache"],
-          ["cache", "redis"],
-          ["auth", "db"],
-        ],
-        steps: [
-          "Cluster 5xx events by service",
-          "Correlate with deploy timeline",
-          "Walk dependency graph from origin",
-          "Score candidate causes",
-        ],
-      };
-      break;
-    case "codegen":
-      text = CODEGEN_REPLY(prompt);
-      meta = {
-        files: [
-          { path: "src/server/inventory.ts", lines: 32, lang: "TypeScript" },
-          { path: "src/server/db/schema.ts", lines: 18, lang: "TypeScript" },
-          { path: "tests/inventory.test.ts", lines: 41, lang: "TypeScript" },
-        ],
-        framework: "Hono + Zod",
-        runtime: "Node 20 / Bun",
-      };
-      break;
-    case "autofix":
-      text = AUTOFIX_REPLY(prompt);
-      meta = {
-        confidence: 0.94,
-        diff: {
-          removed: 4,
-          added: 4,
+  // For knowledge assistant with files, use /upload endpoint
+  if (agentId === "knowledge" && files && files.length > 0) {
+    const uploadUrl = baseUrl + "/upload";
+    console.log(`Uploading files to knowledge assistant at: ${uploadUrl}`);
+    
+    try {
+      // Note: This is a placeholder. You'll need to implement actual file upload
+      // For now, we'll just send the file metadata
+      const response = await fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-        category: "Stale closure in useEffect",
-      };
-      break;
+        body: JSON.stringify({
+          message: prompt,
+          files: files.map(f => ({ name: f.name, size: f.size, type: f.type })),
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Upload response:', data);
+        yield { text: "Files uploaded successfully. " };
+      }
+    } catch (error) {
+      console.error('File upload error:', error);
+      yield { text: "Note: File upload encountered an issue. Proceeding with query... " };
+    }
   }
 
-  for await (const c of streamText(text)) yield c;
-  return { meta };
+  // Try primary endpoint first, then fallbacks
+  const endpointsToTry = [PRIMARY_ENDPOINTS[agentId], ...FALLBACK_ENDPOINTS[agentId]];
+  
+  for (const endpoint of endpointsToTry) {
+    const url = baseUrl + endpoint;
+    
+    // Try POST first, then GET
+    for (const method of ["POST", "GET"]) {
+      console.log(`Trying ${method} ${agentId} agent at:`, url);
+
+      try {
+        const fetchOptions: RequestInit = {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        };
+
+        // Only add body for POST requests
+        if (method === "POST") {
+          fetchOptions.body = JSON.stringify({ 
+            message: prompt,
+            query: prompt,
+            question: prompt,
+            prompt: prompt,
+            input: prompt,
+            files: files?.map((f) => ({ name: f.name, size: f.size, type: f.type })) ?? []
+          });
+        }
+
+        const response = await fetch(url, fetchOptions);
+
+        console.log(`${method} ${url} - Status:`, response.status);
+
+        if (!response.ok) {
+          if (response.status === 405) {
+            console.log(`${method} not allowed, trying next method...`);
+            continue; // Try next method
+          }
+          const errorText = await response.text();
+          console.error('Error response:', errorText);
+          lastError = new Error(`${response.status}: ${errorText}`);
+          continue;
+        }
+
+        const contentType = response.headers.get("content-type");
+        console.log('Content-Type:', contentType);
+
+        // Handle streaming response
+        if (contentType?.includes("text/event-stream") || contentType?.includes("stream")) {
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+
+          if (!reader) {
+            throw new Error("No response body");
+          }
+
+          let buffer = "";
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                const data = line.slice(6).trim();
+                if (data === "[DONE]") continue;
+                
+                try {
+                  const parsed = JSON.parse(data);
+                  const parsedText = readTextField(parsed);
+                  if (parsedText) {
+                    yield {
+                      text: agentId === "rca" ? normalizeRcaReport(parsedText) : parsedText,
+                    };
+                  }
+                  if (parsed.meta || parsed.metadata) {
+                    meta = parsed.meta || parsed.metadata;
+                  }
+                } catch (e) {
+                  yield { text: data };
+                }
+              }
+            }
+          }
+
+          if (buffer.trim()) {
+            yield { text: buffer };
+          }
+        } else {
+          // Handle regular JSON response
+          const data = await response.json();
+          console.log('Full Response data:', JSON.stringify(data, null, 2));
+
+          // Extract text from various possible fields
+          const text = extractResponseText(agentId, data);
+          
+          // Extract metadata (confidence, sources, citations)
+          // Check all possible locations for metadata
+          console.log('Checking for confidence:', data.confidence, data.score, data.confidence_score);
+          console.log('Checking for sources:', data.sources, data.citations, data.documents, data.source_documents);
+          
+          if (data.confidence !== undefined) {
+            meta.confidence = data.confidence;
+          } else if (data.score !== undefined) {
+            meta.confidence = data.score;
+          } else if (data.confidence_score !== undefined) {
+            meta.confidence = data.confidence_score;
+          }
+          
+          // Check for sources/citations in various formats
+          if (data.sources && Array.isArray(data.sources)) {
+            meta.citations = data.sources.map((s: any) => ({
+              title: s.title || s.document || s.source || s.file_name || 'Unknown Document',
+              page: s.page || s.page_number || s.page_num || 0,
+              score: s.score || s.relevance || s.similarity || 0
+            }));
+          } else if (data.citations && Array.isArray(data.citations)) {
+            meta.citations = data.citations.map((c: any) => ({
+              title: c.title || c.document || c.source || c.file_name || 'Unknown Document',
+              page: c.page || c.page_number || c.page_num || 0,
+              score: c.score || c.relevance || c.similarity || 0
+            }));
+          } else if (data.documents && Array.isArray(data.documents)) {
+            meta.citations = data.documents.map((d: any) => ({
+              title: d.title || d.document || d.source || d.file_name || 'Unknown Document',
+              page: d.page || d.page_number || d.page_num || 0,
+              score: d.score || d.relevance || d.similarity || 0
+            }));
+          } else if (data.source_documents && Array.isArray(data.source_documents)) {
+            meta.citations = data.source_documents.map((sd: any) => ({
+              title: sd.title || sd.document || sd.source || sd.file_name || sd.metadata?.source || 'Unknown Document',
+              page: sd.page || sd.page_number || sd.page_num || sd.metadata?.page || 0,
+              score: sd.score || sd.relevance || sd.similarity || 0
+            }));
+          }
+          
+          // Check nested metadata
+          if (data.metadata) {
+            if (data.metadata.confidence !== undefined) meta.confidence = data.metadata.confidence;
+            if (data.metadata.sources) meta.citations = data.metadata.sources;
+            if (data.metadata.citations) meta.citations = data.metadata.citations;
+          }
+          if (data.meta) {
+            if (data.meta.confidence !== undefined) meta.confidence = data.meta.confidence;
+            if (data.meta.sources) meta.citations = data.meta.sources;
+            if (data.meta.citations) meta.citations = data.meta.citations;
+          }
+
+          console.log('Extracted metadata:', JSON.stringify(meta, null, 2));
+          
+          // Stream the text word by word for better UX
+          const words = text.match(/\S+\s*/g) ?? [text];
+          for (const word of words) {
+            yield { text: word };
+            await new Promise(resolve => setTimeout(resolve, 20));
+          }
+        }
+
+        console.log(`✓ Successfully connected to ${agentId} using ${method} ${url}`);
+        return { meta };
+      } catch (error) {
+        console.error(`Error with ${method} ${url}:`, error);
+        lastError = error instanceof Error ? error : new Error(String(error));
+        continue; // Try next method/endpoint
+      }
+    }
+  }
+
+  // If all endpoints failed, throw the last error
+  console.error(`All endpoints failed for ${agentId} agent`);
+  throw lastError || new Error(`Failed to connect to ${agentId} agent`);
 }

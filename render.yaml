@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: nexus-ai-platform
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: VITE_RENDER_KNOWLEDGE_AGENT_URL
+        sync: false
+      - key: VITE_RENDER_RCA_AGENT_URL
+        sync: false
+      - key: VITE_RENDER_CODEGEN_AGENT_URL
+        sync: false
+      - key: VITE_RENDER_AUTOFIX_AGENT_URL
+        sync: false
+      - key: VITE_RENDER_KNOWLEDGE_UPLOAD_URL
+        sync: false
+      - key: RENDER_KNOWLEDGE_AGENT_URL
+        sync: false
+      - key: RENDER_RCA_AGENT_URL
+        sync: false
+      - key: RENDER_CODEGEN_AGENT_URL
+        sync: false
+      - key: RENDER_AUTOFIX_AGENT_URL
+        sync: false
+      - key: RENDER_KNOWLEDGE_UPLOAD_URL
+        sync: false

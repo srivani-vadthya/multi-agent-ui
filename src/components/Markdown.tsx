@@ -20,7 +20,7 @@ function CodeBlock({
   if (inline) {
     return (
       <code
-        className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[0.85em]"
+        className="rounded-md border border-border bg-secondary px-1.5 py-0.5 font-mono text-[0.9em] font-medium text-foreground"
         {...props}
       >
         {children}
@@ -37,27 +37,27 @@ function CodeBlock({
   const isDiff = lang === "diff";
 
   return (
-    <div className="group my-4 overflow-hidden rounded-xl border border-white/10 bg-[oklch(0.12_0.025_270)]">
-      <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] px-3 py-1.5">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+    <div className="group my-4 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="flex items-center justify-between border-b border-border bg-secondary px-4 py-2">
+        <span className="font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           {lang ?? "code"}
         </span>
         <button
           onClick={copy}
-          className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
         >
           {copied ? (
             <>
-              <Check className="h-3 w-3" /> Copied
+              <Check className="h-3.5 w-3.5" /> Copied
             </>
           ) : (
             <>
-              <Copy className="h-3 w-3" /> Copy
+              <Copy className="h-3.5 w-3.5" /> Copy
             </>
           )}
         </button>
       </div>
-      <pre className="scrollbar-thin overflow-x-auto p-4 text-[12.5px] leading-relaxed">
+      <pre className="scrollbar-thin overflow-x-auto p-4 text-[13px] leading-relaxed">
         <code className="font-mono">
           {isDiff
             ? code.split("\n").map((line, i) => {
@@ -87,22 +87,22 @@ export function Markdown({ children }: { children: string }) {
         components={{
           code: CodeBlock as never,
           h1: ({ children }) => (
-            <h1 className="mb-3 mt-4 text-xl font-semibold tracking-tight">{children}</h1>
+            <h1 className="mb-4 mt-6 text-2xl font-bold tracking-tight">{children}</h1>
           ),
           h2: ({ children }) => (
-            <h2 className="mb-2 mt-5 text-lg font-semibold tracking-tight">{children}</h2>
+            <h2 className="mb-3 mt-6 text-xl font-bold tracking-tight">{children}</h2>
           ),
           h3: ({ children }) => (
-            <h3 className="mb-2 mt-4 text-base font-semibold tracking-tight">{children}</h3>
+            <h3 className="mb-2 mt-5 text-lg font-semibold tracking-tight">{children}</h3>
           ),
           p: ({ children }) => (
-            <p className="my-3 leading-7 text-foreground/90">{children}</p>
+            <p className="my-4 leading-relaxed text-foreground font-normal">{children}</p>
           ),
           ul: ({ children }) => (
-            <ul className="my-3 list-disc space-y-1 pl-5 text-foreground/90">{children}</ul>
+            <ul className="my-4 list-disc space-y-2 pl-6 text-foreground leading-relaxed font-normal">{children}</ul>
           ),
           ol: ({ children }) => (
-            <ol className="my-3 list-decimal space-y-1 pl-5 text-foreground/90">{children}</ol>
+            <ol className="my-4 list-decimal space-y-2 pl-6 text-foreground leading-relaxed font-normal">{children}</ol>
           ),
           a: ({ children, href }) => (
             <a
@@ -115,9 +115,9 @@ export function Markdown({ children }: { children: string }) {
             </a>
           ),
           strong: ({ children }) => (
-            <strong className="font-semibold text-foreground">{children}</strong>
+            <strong className="font-bold text-foreground">{children}</strong>
           ),
-          hr: () => <hr className="my-4 border-white/10" />,
+          hr: () => <hr className="my-6 border-border" />,
         }}
       >
         {children}

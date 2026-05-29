@@ -19,9 +19,6 @@ function ChatThreadPage() {
 
   const validAgent = agentId in AGENTS;
 
-  // If thread doesn't exist in store (fresh reload — no persistence),
-  // create a new one for this agent and redirect to its real ID so the
-  // route + store stay in sync.
   useEffect(() => {
     if (!thread && validAgent) {
       const t = createThread(agentId as AgentId);
@@ -39,15 +36,17 @@ function ChatThreadPage() {
   );
 
   return (
-    <div className="aurora-bg flex min-h-screen w-full">
+    <div className="flex min-h-screen w-full bg-background">
       <AppSidebar activeAgent={activeAgent} />
-      {thread ? (
-        <ChatView thread={thread} key={thread.id} />
-      ) : (
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-          <span className="shimmer-text">Preparing workspace…</span>
-        </div>
-      )}
+      <div className="flex-1">
+        {thread ? (
+          <ChatView thread={thread} key={thread.id} />
+        ) : (
+          <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
+            <span className="shimmer-text">Preparing workspace…</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

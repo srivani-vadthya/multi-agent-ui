@@ -4,9 +4,9 @@ This app is configured as a Render Node web service.
 
 ## Render settings
 
-- Build command: `npm install && npm run build`
+- Build command: `npm install --include=dev && npm run build`
 - Start command: `npm run start`
-- Node version: `22`
+- Node version: `22.x`
 
 The checked-in `render.yaml` contains these settings for Blueprint deploys.
 

@@ -20,6 +20,9 @@ const TEXT_FIELDS = [
   "report",
   "analysis",
   "summary",
+  "output",
+  "final_answer",
+  "generated_answer",
 ];
 
 function readTextField(data: unknown): string | undefined {
@@ -76,8 +79,169 @@ function extractResponseText(agentId: AgentId, data: unknown): string {
   return agentId === "rca" ? normalizeRcaReport(text) : text;
 }
 
+function normalizeScore(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 1 ? value / 100 : value;
+  }
+
+  if (typeof value === "string") {
+    const match = value.match(/\d+(\.\d+)?/);
+    if (!match) return undefined;
+    const parsed = Number(match[0]);
+    if (!Number.isFinite(parsed)) return undefined;
+    return value.includes("%") || parsed > 1 ? parsed / 100 : parsed;
+  }
+
+  return undefined;
+}
+
+function confidenceLabel(score: number): string {
+  if (score >= 0.8) return "HIGH";
+  if (score >= 0.55) return "MEDIUM";
+  return "LOW";
+}
+
+function shouldHideKnowledgeEvidence(data: Record<string, unknown>, answerText: string): boolean {
+  const documentFlag =
+    data.is_from_documents ??
+    data.isFromDocuments ??
+    data.from_documents ??
+    data.fromDocuments ??
+    data.document_based ??
+    data.documentBased;
+
+  if (documentFlag === false) return true;
+
+  const explicitValue =
+    data.show_confidence ??
+    data.showConfidence ??
+    data.show_sources ??
+    data.showSources ??
+    data.has_answer ??
+    data.hasAnswer ??
+    data.found_answer ??
+    data.foundAnswer;
+
+  if (explicitValue === false) return true;
+
+  const responseType = String(
+    data.response_type ??
+      data.responseType ??
+      data.answer_type ??
+      data.answerType ??
+      data.intent ??
+      data.category ??
+      ""
+  ).toLowerCase();
+
+  if (/(greeting|small[_ -]?talk|casual|not[_ -]?found|no[_ -]?answer|out[_ -]?of[_ -]?scope)/.test(responseType)) {
+    return true;
+  }
+
+  const normalized = answerText.trim().toLowerCase();
+  if (!normalized) return true;
+
+  const greetingPattern =
+    /^(hi|hello|hey|good morning|good afternoon|good evening|greetings)[!. ,]*(how can i (assist|help)|what can i do|how may i)/i;
+  const notFoundPattern =
+    /(could not find|couldn't find|not found|no relevant|no matching|not available in (the )?(indexed )?documents|not present in (the )?(indexed )?documents|i don't know|i do not know|unable to find|cannot find|no answer)/i;
+
+  return greetingPattern.test(answerText.trim()) || notFoundPattern.test(answerText);
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function extractKnowledgeMeta(data: Record<string, unknown>, answerText = ""): Record<string, unknown> {
+  if (shouldHideKnowledgeEvidence(data, answerText)) {
+    return { hideEvidence: true };
+  }
+
+  const confidence =
+    normalizeScore(data.confidence) ??
+    normalizeScore(data.confidence_score) ??
+    normalizeScore(data.answer_confidence) ??
+    normalizeScore(data.score) ??
+    normalizeScore(data.trust_score);
+
+  const rawSources =
+    (Array.isArray(data.sources) && data.sources) ||
+    (Array.isArray(data.citations) && data.citations) ||
+    (Array.isArray(data.documents) && data.documents) ||
+    (Array.isArray(data.source_documents) && data.source_documents) ||
+    (Array.isArray(data.retrieved_chunks) && data.retrieved_chunks) ||
+    (Array.isArray(data.chunks) && data.chunks) ||
+    [];
+
+  const isFromDocuments =
+    data.is_from_documents ??
+    data.isFromDocuments ??
+    data.from_documents ??
+    data.fromDocuments ??
+    data.document_based ??
+    data.documentBased;
+
+  const citations = rawSources.map((source) => {
+    const item = readRecord(source);
+    const metadata = readRecord(item.metadata);
+    return {
+      title:
+        item.title ||
+        item.document ||
+        item.source ||
+        item.file_name ||
+        item.filename ||
+        item.document_name ||
+        metadata.title ||
+        metadata.document ||
+        metadata.source ||
+        metadata.file_name ||
+        metadata.filename ||
+        "Unknown Document",
+      page:
+        item.page ||
+        item.page_number ||
+        item.page_num ||
+        metadata.page ||
+        metadata.page_number ||
+        metadata.page_num ||
+        0,
+      score:
+        normalizeScore(item.score) ??
+        normalizeScore(item.relevance) ??
+        normalizeScore(item.relevance_score) ??
+        normalizeScore(item.similarity) ??
+        normalizeScore(metadata.score) ??
+        normalizeScore(metadata.relevance) ??
+        0,
+    };
+  });
+
+  const meta: Record<string, unknown> = {};
+  if (typeof isFromDocuments === "boolean") {
+    meta.isFromDocuments = isFromDocuments;
+  }
+  if (isFromDocuments === false || rawSources.length === 0) {
+    return { ...meta, hideEvidence: true };
+  }
+  if (confidence !== undefined) {
+    meta.confidence = confidence;
+    meta.confidenceLabel =
+      data.confidence_level ||
+      data.answer_confidence_level ||
+      data.confidence_label ||
+      confidenceLabel(confidence);
+  }
+  if (citations.length > 0) meta.citations = citations;
+  if (typeof data.answer_source === "string") meta.answerSource = data.answer_source;
+  if (typeof data.source_type === "string") meta.answerSource = data.source_type;
+
+  return meta;
+}
+
 const AGENT_URLS: Record<AgentId, string> = {
-  knowledge: import.meta.env.VITE_RENDER_KNOWLEDGE_AGENT_URL || "https://py-agent-knowledgeassistant-8bby.onrender.com",
+  knowledge: import.meta.env.VITE_RENDER_KNOWLEDGE_AGENT_URL || "https://knowledge-agent-sode.onrender.com/",
   rca: import.meta.env.VITE_RENDER_RCA_AGENT_URL || "https://patchly-rca-agent-2.onrender.com",
   codegen: import.meta.env.VITE_RENDER_CODEGEN_AGENT_URL || "https://code-generator-wfye.onrender.com",
   autofix: import.meta.env.VITE_RENDER_AUTOFIX_AGENT_URL || "https://your-autofix-agent.onrender.com/chat",
@@ -85,7 +249,7 @@ const AGENT_URLS: Record<AgentId, string> = {
 
 // Primary endpoints for each agent
 const PRIMARY_ENDPOINTS: Record<AgentId, string> = {
-  knowledge: "/chat",
+  knowledge: "/ask",
   rca: "/analyze",
   codegen: "/generate",
   autofix: "/fix",
@@ -93,7 +257,7 @@ const PRIMARY_ENDPOINTS: Record<AgentId, string> = {
 
 // Fallback endpoints to try if primary fails
 const FALLBACK_ENDPOINTS: Record<AgentId, string[]> = {
-  knowledge: ["/query", "/ask", "/upload", ""],
+  knowledge: ["/execute", "/query"],
   rca: ["/chat", "/api/analyze", ""],
   codegen: ["/generate", "/edit", ""],
   autofix: ["/chat", ""],
@@ -114,17 +278,26 @@ export async function* streamAgent(
     console.log(`Uploading files to knowledge assistant at: ${uploadUrl}`);
     
     try {
-      // Note: This is a placeholder. You'll need to implement actual file upload
-      // For now, we'll just send the file metadata
+      const filesWithData = files.filter((file) => file.file instanceof File);
+      const formData = new FormData();
+      filesWithData.forEach((file) => {
+        if (!file.file) return;
+        formData.append("file", file.file);
+        formData.append("files", file.file);
+        formData.append("document", file.file);
+      });
+      formData.append("message", prompt);
+      formData.append("query", prompt);
+
       const response = await fetch(uploadUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: prompt,
-          files: files.map(f => ({ name: f.name, size: f.size, type: f.type })),
-        }),
+        body: filesWithData.length > 0
+          ? formData
+          : JSON.stringify({
+              message: prompt,
+              files: files.map(f => ({ name: f.name, size: f.size, type: f.type })),
+            }),
+        headers: filesWithData.length > 0 ? undefined : { "Content-Type": "application/json" },
       });
 
       if (response.ok) {
@@ -288,6 +461,14 @@ export async function* streamAgent(
             if (data.meta.confidence !== undefined) meta.confidence = data.meta.confidence;
             if (data.meta.sources) meta.citations = data.meta.sources;
             if (data.meta.citations) meta.citations = data.meta.citations;
+          }
+          if (agentId === "knowledge") {
+            const knowledgeMeta = extractKnowledgeMeta(data as Record<string, unknown>, text);
+            meta = {
+              ...meta,
+              ...knowledgeMeta,
+              citations: knowledgeMeta.hideEvidence ? undefined : knowledgeMeta.citations ?? meta.citations,
+            };
           }
 
           console.log('Extracted metadata:', JSON.stringify(meta, null, 2));

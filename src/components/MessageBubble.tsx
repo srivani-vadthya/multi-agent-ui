@@ -55,7 +55,7 @@ export function MessageBubble({
             {message.content === "" && message.streaming ? (
               <span className="shimmer-text font-medium">Thinking…</span>
             ) : (
-              <Markdown>{message.content}</Markdown>
+              <Markdown plainCodeBlocks={agent.id === "rca"}>{message.content}</Markdown>
             )}
             {!message.streaming && message.content && (
               <div className="mt-3 flex items-center gap-1 text-muted-foreground">

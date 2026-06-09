@@ -25,7 +25,7 @@ const DEFAULT_AGENT_PATH: Record<AgentId, string> = {
 };
 
 const DEFAULT_AGENT_UPLOAD_PATH: Record<AgentId, string> = {
-  knowledge: "",
+  knowledge: "/upload",
   rca: "",
   codegen: "",
   autofix: "",

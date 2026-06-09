@@ -3,16 +3,20 @@ import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 
+interface CodeBlockProps {
+  inline?: boolean;
+  className?: string;
+  children?: React.ReactNode;
+  plainText?: boolean;
+}
+
 function CodeBlock({
   inline,
   className,
   children,
+  plainText = false,
   ...props
-}: {
-  inline?: boolean;
-  className?: string;
-  children?: React.ReactNode;
-}) {
+}: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
   const code = String(children ?? "").replace(/\n$/, "");
   const lang = /language-(\w+)/.exec(className ?? "")?.[1];
@@ -20,11 +24,20 @@ function CodeBlock({
   if (inline) {
     return (
       <code
-        className="rounded-md border border-border bg-secondary px-1.5 py-0.5 font-mono text-[0.9em] font-medium text-foreground"
+        className="rounded-md border border-border bg-secondary px-1.5 py-0.5 font-mono text-[0.9em] font-medium text-foreground break-words [overflow-wrap:anywhere]"
         {...props}
       >
         {children}
       </code>
+    );
+  }
+
+  // For plain text rendering (e.g., RCA agent)
+  if (plainText) {
+    return (
+      <div className="my-2 whitespace-pre-wrap break-words text-[13px] leading-relaxed [overflow-wrap:anywhere]">
+        {code}
+      </div>
     );
   }
 
@@ -57,8 +70,8 @@ function CodeBlock({
           )}
         </button>
       </div>
-      <pre className="scrollbar-thin overflow-x-auto p-4 text-[13px] leading-relaxed">
-        <code className="font-mono">
+      <pre className="overflow-x-hidden whitespace-pre-wrap break-words p-4 text-[13px] leading-relaxed [overflow-wrap:anywhere]">
+        <code className="font-mono break-words [overflow-wrap:anywhere]">
           {isDiff
             ? code.split("\n").map((line, i) => {
                 const cls = line.startsWith("+")
@@ -67,7 +80,7 @@ function CodeBlock({
                     ? "text-rose-300 bg-rose-400/5"
                     : "text-foreground/85";
                 return (
-                  <div key={i} className={`-mx-4 px-4 ${cls}`}>
+                  <div key={i} className={`-mx-4 break-words px-4 [overflow-wrap:anywhere] ${cls}`}>
                     {line || " "}
                   </div>
                 );
@@ -79,13 +92,17 @@ function CodeBlock({
   );
 }
 
-export function Markdown({ children }: { children: string }) {
+export function Markdown({ children, plainCodeBlocks = false }: { children: string; plainCodeBlocks?: boolean }) {
+  const PlainTextCodeBlock = (props: CodeBlockProps) => (
+    <CodeBlock {...props} plainText={plainCodeBlocks} />
+  );
+
   return (
-    <div className="prose-chat">
+    <div className="prose-chat min-w-0 overflow-x-hidden break-words [overflow-wrap:anywhere]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          code: CodeBlock as never,
+          code: PlainTextCodeBlock as never,
           h1: ({ children }) => (
             <h1 className="mb-4 mt-6 text-2xl font-bold tracking-tight">{children}</h1>
           ),
@@ -96,18 +113,18 @@ export function Markdown({ children }: { children: string }) {
             <h3 className="mb-2 mt-5 text-lg font-semibold tracking-tight">{children}</h3>
           ),
           p: ({ children }) => (
-            <p className="my-4 leading-relaxed text-foreground font-normal">{children}</p>
+            <p className="my-4 break-words font-normal leading-relaxed text-foreground [overflow-wrap:anywhere]">{children}</p>
           ),
           ul: ({ children }) => (
-            <ul className="my-4 list-disc space-y-2 pl-6 text-foreground leading-relaxed font-normal">{children}</ul>
+            <ul className="my-4 list-disc space-y-2 break-words pl-6 font-normal leading-relaxed text-foreground [overflow-wrap:anywhere]">{children}</ul>
           ),
           ol: ({ children }) => (
-            <ol className="my-4 list-decimal space-y-2 pl-6 text-foreground leading-relaxed font-normal">{children}</ol>
+            <ol className="my-4 list-decimal space-y-2 break-words pl-6 font-normal leading-relaxed text-foreground [overflow-wrap:anywhere]">{children}</ol>
           ),
           a: ({ children, href }) => (
             <a
               href={href}
-              className="text-accent underline-offset-2 hover:underline"
+              className="break-words text-accent underline-offset-2 hover:underline [overflow-wrap:anywhere]"
               target="_blank"
               rel="noreferrer"
             >

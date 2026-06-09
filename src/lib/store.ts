@@ -8,6 +8,7 @@ export interface UploadedFile {
   name: string;
   size: number;
   type: string;
+  file?: File;
 }
 
 export interface Message {

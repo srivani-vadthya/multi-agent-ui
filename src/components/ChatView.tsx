@@ -12,8 +12,120 @@ import {
 import { streamAgent } from "@/lib/mockAgents";
 import { Composer, type ComposerSubmit } from "./Composer";
 import { Markdown } from "./Markdown";
-import { Check, Copy, Download, MoreVertical, Paperclip, RefreshCw, Sparkles, X } from "lucide-react";
+import { Check, ChevronDown, Copy, Download, FileSearch, MoreVertical, Paperclip, RefreshCw, Sparkles, X } from "lucide-react";
 import robotImage from "@/assets/robot.png";
+
+type Citation = {
+  title: string;
+  page: number | string;
+  score: number;
+};
+
+function normalizeConfidence(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return value > 1 ? value / 100 : value;
+}
+
+function shouldHideKnowledgeEvidence(content: string, meta?: Record<string, unknown>) {
+  if (meta?.hideEvidence === true) return true;
+  if (meta?.isFromDocuments !== true) return true;
+
+  const normalized = content.trim();
+  if (!normalized) return true;
+
+  const responseType =
+    typeof meta?.responseType === "string" ? meta.responseType.toLowerCase() : "";
+  if (/(greeting|small[_ -]?talk|casual|not[_ -]?found|no[_ -]?answer|out[_ -]?of[_ -]?scope)/.test(responseType)) {
+    return true;
+  }
+
+  const greetingPattern =
+    /^(hi|hello|hey|good morning|good afternoon|good evening|greetings)[!. ,]*(how can i (assist|help)|what can i do|how may i)/i;
+  const notFoundPattern =
+    /(could not find|couldn't find|not found|no relevant|no matching|not available in (the )?(indexed )?documents|not present in (the )?(indexed )?documents|i don't know|i do not know|unable to find|cannot find|no answer)/i;
+
+  return greetingPattern.test(normalized) || notFoundPattern.test(normalized);
+}
+
+function KnowledgeEvidence({ content, meta }: { content: string; meta?: Record<string, unknown> }) {
+  if (shouldHideKnowledgeEvidence(content, meta)) return null;
+
+  const confidence = normalizeConfidence(meta?.confidence);
+  const confidenceLabel =
+    typeof meta?.confidenceLabel === "string"
+      ? meta.confidenceLabel.toUpperCase()
+      : confidence === undefined
+        ? undefined
+        : confidence >= 0.8
+          ? "HIGH"
+          : confidence >= 0.55
+            ? "MEDIUM"
+            : "LOW";
+  const citations = ((meta?.citations as Citation[] | undefined) ?? []).filter(
+    (citation) => citation.title
+  );
+
+  if (citations.length === 0 || confidence === undefined) return null;
+
+  const confidenceColor =
+    confidence === undefined || confidence >= 0.55
+      ? "oklch(0.66 0.16 154)"
+      : "oklch(0.62 0.2 28)";
+
+  return (
+    <div className="mt-5 overflow-hidden rounded-2xl border border-border bg-background/80">
+      <div className="bg-secondary/70 px-4 py-4 sm:px-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm font-semibold text-foreground">Answer Confidence:</span>
+          {confidence !== undefined && (
+            <span
+              className="rounded-2xl px-4 py-2 text-sm font-bold text-white shadow-sm"
+              style={{ background: confidenceColor }}
+            >
+              {(confidence * 100).toFixed(1)}% - {confidenceLabel}
+            </span>
+          )}
+        </div>
+        <p className="mt-4 text-sm text-muted-foreground">
+          Answer is from indexed documents
+        </p>
+        <p className="mt-3 text-xs italic leading-5 text-muted-foreground">
+          The answer is reasonably supported by the retrieved chunks, though some parts may be summarized or loosely phrased.
+        </p>
+      </div>
+
+      <details className="group" open>
+        <summary className="flex cursor-pointer list-none items-center gap-2 border-t border-border px-4 py-3 text-sm font-medium text-foreground sm:px-5">
+          <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+          <span>View Sources ({citations.length} documents)</span>
+        </summary>
+        {citations.length > 0 ? (
+          <div className="space-y-3 px-4 pb-4 pt-2 sm:px-5">
+            {citations.map((citation, index) => (
+              <div
+                key={`${citation.title}-${citation.page}-${index}`}
+                className="rounded-xl border-l-4 bg-secondary/50 px-4 py-4"
+                style={{ borderLeftColor: "oklch(0.68 0.16 246)" }}
+              >
+                <div className="font-semibold text-foreground">{citation.title}</div>
+                <div className="mt-3 text-sm text-muted-foreground">
+                  Page {citation.page || "-"} - Relevance: {(normalizeConfidence(citation.score) ?? 0) * 100 > 0
+                    ? `${((normalizeConfidence(citation.score) ?? 0) * 100).toFixed(1)}%`
+                    : "Not scored"}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="px-5 pb-5 pt-2 text-sm text-muted-foreground">
+            <FileSearch className="mb-2 h-5 w-5" />
+            No source documents were returned for this answer.
+          </div>
+        )}
+      </details>
+    </div>
+  );
+}
 
 function MessageBubble({ message, agent, onRegenerate }: any) {
   const [copied, setCopied] = useState(false);
@@ -43,10 +155,10 @@ function MessageBubble({ message, agent, onRegenerate }: any) {
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex justify-end"
+        className="flex w-full justify-end"
       >
-        <div className="max-w-[78%] rounded-2xl rounded-br-md border border-border/70 bg-card px-4 py-3 text-foreground shadow-[0_12px_35px_oklch(0_0_0_/_0.06)]">
-          <div className="whitespace-pre-wrap text-[15px] font-normal leading-relaxed">
+        <div className="min-w-0 max-w-[78%] overflow-hidden rounded-2xl rounded-br-md border border-border/70 bg-card px-4 py-3 text-foreground shadow-[0_12px_35px_oklch(0_0_0_/_0.06)]">
+          <div className="whitespace-pre-wrap break-words text-[15px] font-normal leading-relaxed [overflow-wrap:anywhere]">
             {message.content || (message.files?.length ? "Uploaded documents" : "")}
           </div>
           {message.files?.length > 0 && (
@@ -71,7 +183,7 @@ function MessageBubble({ message, agent, onRegenerate }: any) {
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex gap-3"
+      className="flex w-full justify-start gap-3"
     >
       <div
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/80 shadow-sm"
@@ -83,13 +195,16 @@ function MessageBubble({ message, agent, onRegenerate }: any) {
           className="h-6 w-6 object-cover"
         />
       </div>
-      <div className="max-w-[85%] flex-1">
-        <div className="rounded-2xl rounded-tl-md border border-border/70 bg-card px-4 py-3 shadow-[0_12px_35px_oklch(0_0_0_/_0.06)]">
+      <div className="min-w-0 max-w-[85%] flex-1">
+        <div className="min-w-0 overflow-hidden rounded-2xl rounded-tl-md border border-border/70 bg-card px-4 py-3 shadow-[0_12px_35px_oklch(0_0_0_/_0.06)]">
           {message.content === "" && message.streaming ? (
             <span className="text-muted-foreground font-medium">Thinking…</span>
           ) : (
-            <div className="text-[15px] leading-relaxed text-foreground font-normal">
+            <div className="min-w-0 break-words text-[15px] font-normal leading-relaxed text-foreground [overflow-wrap:anywhere]">
               <Markdown>{message.content}</Markdown>
+              {agent.id === "knowledge" && !message.streaming && (
+                <KnowledgeEvidence content={message.content} meta={message.meta} />
+              )}
             </div>
           )}
         </div>
@@ -182,6 +297,7 @@ export function ChatView({ thread }: { thread: Thread }) {
       name: f.name,
       size: f.size,
       type: f.type,
+      file: f,
     }));
     if (uploaded.length) addFiles(thread.id, uploaded);
 
@@ -212,7 +328,7 @@ export function ChatView({ thread }: { thread: Thread }) {
   };
 
   return (
-    <div className="aurora-bg flex h-screen flex-col">
+    <div className="aurora-bg flex h-screen min-w-0 flex-col overflow-hidden">
       {/* Header */}
       <header className="flex h-16 items-center justify-between border-b border-border/70 bg-background/85 px-6 backdrop-blur-xl">
         <div className="flex items-center gap-3">
@@ -242,9 +358,9 @@ export function ChatView({ thread }: { thread: Thread }) {
 
       <div
         ref={scrollRef}
-        className="scrollbar-thin flex-1 overflow-y-auto px-4 py-6"
+        className="scrollbar-thin flex-1 overflow-y-auto overflow-x-hidden px-4 py-6"
       >
-        <div className="mx-auto min-h-full w-full max-w-4xl space-y-6">
+        <div className="mx-auto min-h-full w-full max-w-4xl space-y-6 overflow-x-hidden">
           {thread.messages.length === 0 ? (
             <div className="flex min-h-[calc(100vh-12rem)] items-center justify-center">
               <motion.div

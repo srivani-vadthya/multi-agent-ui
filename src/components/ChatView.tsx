@@ -201,7 +201,7 @@ function MessageBubble({ message, agent, onRegenerate }: any) {
             <span className="text-muted-foreground font-medium">Thinking…</span>
           ) : (
             <div className="min-w-0 break-words text-[15px] font-normal leading-relaxed text-foreground [overflow-wrap:anywhere]">
-              <Markdown>{message.content}</Markdown>
+              <Markdown plainCodeBlocks={agent.id === "rca"}>{message.content}</Markdown>
               {agent.id === "knowledge" && !message.streaming && (
                 <KnowledgeEvidence content={message.content} meta={message.meta} />
               )}

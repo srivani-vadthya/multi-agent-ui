@@ -102,7 +102,8 @@ function confidenceLabel(score: number): string {
 }
 
 function shouldHideKnowledgeEvidence(data: Record<string, unknown>, answerText: string): boolean {
-  const documentFlag =
+  // Check if answer is from documents
+  const isFromDocuments =
     data.is_from_documents ??
     data.isFromDocuments ??
     data.from_documents ??
@@ -110,8 +111,10 @@ function shouldHideKnowledgeEvidence(data: Record<string, unknown>, answerText: 
     data.document_based ??
     data.documentBased;
 
-  if (documentFlag === false) return true;
+  // Only hide if backend explicitly says it's NOT from documents
+  if (isFromDocuments === false) return true;
 
+  // Check if backend explicitly says NOT to show evidence
   const explicitValue =
     data.show_confidence ??
     data.showConfidence ??
@@ -124,29 +127,8 @@ function shouldHideKnowledgeEvidence(data: Record<string, unknown>, answerText: 
 
   if (explicitValue === false) return true;
 
-  const responseType = String(
-    data.response_type ??
-      data.responseType ??
-      data.answer_type ??
-      data.answerType ??
-      data.intent ??
-      data.category ??
-      ""
-  ).toLowerCase();
-
-  if (/(greeting|small[_ -]?talk|casual|not[_ -]?found|no[_ -]?answer|out[_ -]?of[_ -]?scope)/.test(responseType)) {
-    return true;
-  }
-
-  const normalized = answerText.trim().toLowerCase();
-  if (!normalized) return true;
-
-  const greetingPattern =
-    /^(hi|hello|hey|good morning|good afternoon|good evening|greetings)[!. ,]*(how can i (assist|help)|what can i do|how may i)/i;
-  const notFoundPattern =
-    /(could not find|couldn't find|not found|no relevant|no matching|not available in (the )?(indexed )?documents|not present in (the )?(indexed )?documents|i don't know|i do not know|unable to find|cannot find|no answer)/i;
-
-  return greetingPattern.test(answerText.trim()) || notFoundPattern.test(answerText);
+  // Show evidence for all other cases
+  return false;
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
@@ -154,6 +136,7 @@ function readRecord(value: unknown): Record<string, unknown> {
 }
 
 function extractKnowledgeMeta(data: Record<string, unknown>, answerText = ""): Record<string, unknown> {
+  // First check if we should hide based on explicit flags or content
   if (shouldHideKnowledgeEvidence(data, answerText)) {
     return { hideEvidence: true };
   }
@@ -173,14 +156,6 @@ function extractKnowledgeMeta(data: Record<string, unknown>, answerText = ""): R
     (Array.isArray(data.retrieved_chunks) && data.retrieved_chunks) ||
     (Array.isArray(data.chunks) && data.chunks) ||
     [];
-
-  const isFromDocuments =
-    data.is_from_documents ??
-    data.isFromDocuments ??
-    data.from_documents ??
-    data.fromDocuments ??
-    data.document_based ??
-    data.documentBased;
 
   const citations = rawSources.map((source) => {
     const item = readRecord(source);
@@ -219,30 +194,37 @@ function extractKnowledgeMeta(data: Record<string, unknown>, answerText = ""): R
   });
 
   const meta: Record<string, unknown> = {};
-  if (typeof isFromDocuments === "boolean") {
-    meta.isFromDocuments = isFromDocuments;
-  }
-  if (isFromDocuments === false || rawSources.length === 0) {
-    return { ...meta, hideEvidence: true };
-  }
+  
   if (confidence !== undefined) {
     meta.confidence = confidence;
     meta.confidenceLabel =
       data.confidence_level ||
+      data.confidence_category ||
       data.answer_confidence_level ||
       data.confidence_label ||
       confidenceLabel(confidence);
   }
+  
   if (citations.length > 0) meta.citations = citations;
   if (typeof data.answer_source === "string") meta.answerSource = data.answer_source;
   if (typeof data.source_type === "string") meta.answerSource = data.source_type;
+  
+  // Mark that answer is from documents so frontend renders evidence section
+  const isFromDocuments = 
+    data.is_from_documents ?? 
+    data.isFromDocuments ?? 
+    data.from_documents ?? 
+    data.fromDocuments;
+  if (isFromDocuments === true) {
+    meta.isFromDocuments = true;
+  }
 
   return meta;
 }
 
 const AGENT_URLS: Record<AgentId, string> = {
   knowledge: import.meta.env.VITE_RENDER_KNOWLEDGE_AGENT_URL || "https://knowledge-agent-sode.onrender.com/",
-  rca: import.meta.env.VITE_RENDER_RCA_AGENT_URL || "https://patchly-rca-agent-2.onrender.com",
+  rca: import.meta.env.VITE_RENDER_RCA_AGENT_URL || "https://rca-chat-backend.onrender.com",
   codegen: import.meta.env.VITE_RENDER_CODEGEN_AGENT_URL || "https://code-generator-wfye.onrender.com",
   autofix: import.meta.env.VITE_RENDER_AUTOFIX_AGENT_URL || "https://your-autofix-agent.onrender.com/chat",
 };
@@ -250,7 +232,7 @@ const AGENT_URLS: Record<AgentId, string> = {
 // Primary endpoints for each agent
 const PRIMARY_ENDPOINTS: Record<AgentId, string> = {
   knowledge: "/ask",
-  rca: "/analyze",
+  rca: "/execute",
   codegen: "/generate",
   autofix: "/fix",
 };
@@ -258,8 +240,8 @@ const PRIMARY_ENDPOINTS: Record<AgentId, string> = {
 // Fallback endpoints to try if primary fails
 const FALLBACK_ENDPOINTS: Record<AgentId, string[]> = {
   knowledge: ["/execute", "/query"],
-  rca: ["/chat", "/api/analyze", ""],
-  codegen: ["/generate", "/edit", ""],
+  rca: [],
+  codegen: ["/edit", ""],
   autofix: ["/chat", ""],
 };
 
@@ -407,21 +389,42 @@ export async function* streamAgent(
           // Handle regular JSON response
           const data = await response.json();
           console.log('Full Response data:', JSON.stringify(data, null, 2));
+          console.log('Raw data keys:', Object.keys(data));
 
           // Extract text from various possible fields
           const text = extractResponseText(agentId, data);
           
           // Extract metadata (confidence, sources, citations)
           // Check all possible locations for metadata
-          console.log('Checking for confidence:', data.confidence, data.score, data.confidence_score);
-          console.log('Checking for sources:', data.sources, data.citations, data.documents, data.source_documents);
+          console.log('=== DEBUGGING METADATA ===');
+          console.log('data.confidence:', data.confidence);
+          console.log('data.score:', data.score);
+          console.log('data.confidence_score:', data.confidence_score);
+          console.log('data.answer_confidence:', data.answer_confidence);
+          console.log('data.sources:', data.sources);
+          console.log('data.citations:', data.citations);
+          console.log('data.documents:', data.documents);
+          console.log('data.source_documents:', data.source_documents);
+          console.log('data.is_from_documents:', data.is_from_documents);
+          console.log('data.metadata:', data.metadata);
+          console.log('data.meta:', data.meta);
+          console.log('========================');
           
           if (data.confidence !== undefined) {
             meta.confidence = data.confidence;
-          } else if (data.score !== undefined) {
-            meta.confidence = data.score;
           } else if (data.confidence_score !== undefined) {
             meta.confidence = data.confidence_score;
+          } else if (data.score !== undefined) {
+            meta.confidence = data.score;
+          } else if (data.answer_confidence !== undefined) {
+            meta.confidence = data.answer_confidence;
+          }
+          
+          // Add confidence label if available
+          if (data.confidence_category !== undefined) {
+            meta.confidenceLabel = data.confidence_category;
+          } else if (data.confidence_level !== undefined) {
+            meta.confidenceLabel = data.confidence_level;
           }
           
           // Check for sources/citations in various formats
@@ -429,25 +432,25 @@ export async function* streamAgent(
             meta.citations = data.sources.map((s: any) => ({
               title: s.title || s.document || s.source || s.file_name || 'Unknown Document',
               page: s.page || s.page_number || s.page_num || 0,
-              score: s.score || s.relevance || s.similarity || 0
+              score: s.score || s.relevance || s.relevance_score || s.similarity || 0
             }));
           } else if (data.citations && Array.isArray(data.citations)) {
             meta.citations = data.citations.map((c: any) => ({
               title: c.title || c.document || c.source || c.file_name || 'Unknown Document',
               page: c.page || c.page_number || c.page_num || 0,
-              score: c.score || c.relevance || c.similarity || 0
+              score: c.score || c.relevance || c.relevance_score || c.similarity || 0
             }));
           } else if (data.documents && Array.isArray(data.documents)) {
             meta.citations = data.documents.map((d: any) => ({
               title: d.title || d.document || d.source || d.file_name || 'Unknown Document',
               page: d.page || d.page_number || d.page_num || 0,
-              score: d.score || d.relevance || d.similarity || 0
+              score: d.score || d.relevance || d.relevance_score || d.similarity || 0
             }));
           } else if (data.source_documents && Array.isArray(data.source_documents)) {
             meta.citations = data.source_documents.map((sd: any) => ({
               title: sd.title || sd.document || sd.source || sd.file_name || sd.metadata?.source || 'Unknown Document',
               page: sd.page || sd.page_number || sd.page_num || sd.metadata?.page || 0,
-              score: sd.score || sd.relevance || sd.similarity || 0
+              score: sd.score || sd.relevance || sd.relevance_score || sd.similarity || 0
             }));
           }
           
@@ -464,6 +467,7 @@ export async function* streamAgent(
           }
           if (agentId === "knowledge") {
             const knowledgeMeta = extractKnowledgeMeta(data as Record<string, unknown>, text);
+            console.log('Knowledge meta extracted:', JSON.stringify(knowledgeMeta, null, 2));
             meta = {
               ...meta,
               ...knowledgeMeta,
@@ -471,7 +475,7 @@ export async function* streamAgent(
             };
           }
 
-          console.log('Extracted metadata:', JSON.stringify(meta, null, 2));
+          console.log('Final extracted metadata:', JSON.stringify(meta, null, 2));
           
           // Stream the text word by word for better UX
           const words = text.match(/\S+\s*/g) ?? [text];
@@ -492,6 +496,11 @@ export async function* streamAgent(
   }
 
   // If all endpoints failed, throw the last error
-  console.error(`All endpoints failed for ${agentId} agent`);
-  throw lastError || new Error(`Failed to connect to ${agentId} agent`);
+  const errorMessage = lastError?.message || `Failed to connect to ${agentId} agent`;
+  console.error(`All endpoints failed for ${agentId} agent:`, errorMessage);
+  
+  // Yield a user-friendly error message
+  yield { text: `Unable to connect to the ${agentId} agent. Please check if the backend service is running and accessible.` };
+  
+  return { meta: { error: errorMessage } };
 }

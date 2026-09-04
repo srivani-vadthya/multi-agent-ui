@@ -44,6 +44,9 @@ function normalizeRcaReport(text: string): string {
     .replace(/\\n/g, "\n")
     .replace(/\\t/g, "  ")
     .replace(/\\"/g, '"')
+    .replace(/```[a-zA-Z]*\s*([\s\S]*?)```/g, (_, code: string) =>
+      code.trim().toLowerCase() === "null" ? "" : code
+    )
     .replace(/^```[a-zA-Z]*\s*/gm, "")
     .replace(/```$/gm, "")
     .replace(/^\s*_{8,}\s*$/gm, "---")

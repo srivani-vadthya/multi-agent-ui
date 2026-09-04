@@ -96,6 +96,11 @@ export function Markdown({ children, plainCodeBlocks = false }: { children: stri
   const PlainTextCodeBlock = (props: CodeBlockProps) => (
     <CodeBlock {...props} plainText={plainCodeBlocks} />
   );
+  const markdown = plainCodeBlocks
+    ? children
+        .replace(/`([^`\n]+)`/g, "$1")
+        .replace(/([^\n])\n\s*\n\s*(null)\s*\n\s*\n([^\n])/gi, "$1 $2 $3")
+    : children;
 
   return (
     <div className="prose-chat min-w-0 overflow-x-hidden break-words [overflow-wrap:anywhere]">
@@ -137,7 +142,7 @@ export function Markdown({ children, plainCodeBlocks = false }: { children: stri
           hr: () => <hr className="my-6 border-border" />,
         }}
       >
-        {children}
+        {markdown}
       </ReactMarkdown>
     </div>
   );
